@@ -3,6 +3,8 @@ import MatrixSDK
 
 import NioKit
 
+import WebKit
+
 struct LoginContainerView: View {
     @EnvironmentObject var store: AccountStore
 
@@ -19,9 +21,14 @@ struct LoginContainerView: View {
                   showingRegisterView: $showingRegisterView,
                   isLoginEnabled: isLoginEnabled,
                   onLogin: login,
-                  guessHomeserverURL: guessHomeserverURL)
+                  guessHomeserverURL: guessHomeserverURL,
+                  queryLoginFlows: queryLoginFlows)
+        .onOpenURL { url in
+            print("hello from login View")
+            print(url)
+        }
     }
-
+    
     private func login() {
         var homeserver = self.homeserver.isEmpty ? "https://matrix.org" : self.homeserver
 
@@ -55,6 +62,22 @@ struct LoginContainerView: View {
             }, failure: {_ in })
         }
     }
+    
+    private func queryLoginFlows() {
+        
+        print(self.homeserver)
+        
+        var homeserverURLComponents = URLComponents(string: self.homeserver)
+        
+        guard let homeserverURL = homeserverURLComponents?.url else {
+            // TODO: Handle error
+            print("Invalid homeserver URL '\(homeserver)'")
+            return
+        }
+
+        store.sso(homeserver: homeserverURL)
+
+    }
 
     private func isLoginEnabled() -> Bool {
         guard !username.isEmpty && !password.isEmpty else { return false }
@@ -65,15 +88,20 @@ struct LoginContainerView: View {
 }
 
 struct LoginView: View {
+    @EnvironmentObject var store: AccountStore
+    
     @Binding var username: String
     @Binding var password: String
     @Binding var homeserver: String
 
     @Binding var showingRegisterView: Bool
+    
+    @State var showingSsoLoginView = false
 
     let isLoginEnabled: () -> Bool
     let onLogin: () -> Void
     let guessHomeserverURL: () -> Void
+    let queryLoginFlows: () -> Void
 
     var body: some View {
         VStack {
@@ -81,7 +109,7 @@ struct LoginView: View {
             LoginTitleView()
 
             Spacer()
-            LoginForm(username: $username, password: $password, homeserver: $homeserver, guessHomeserverURL: guessHomeserverURL)
+            LoginForm(username: $username, password: $password, homeserver: $homeserver, guessHomeserverURL: guessHomeserverURL, queryLoginFlows: queryLoginFlows)
 
             buttons
 
@@ -93,6 +121,7 @@ struct LoginView: View {
     }
 
     private var buttons: some View {
+   
         VStack {
             Button(action: {
                 self.onLogin()
@@ -104,11 +133,26 @@ struct LoginView: View {
             .padding([.top, .bottom], 30)
             .disabled(!isLoginEnabled())
 
+            ForEach(store.loginFlows) { flow in
+                Button(action: {
+                    showingSsoLoginView.toggle()
+                }, label: {
+                    Text("SSO \(flow)")
+                })
+                .padding([.bottom], 30)
+                .sheet(isPresented: $showingSsoLoginView) {
+                    WebView(url: URL(string: "\(homeserver)/_matrix/client/r0/login/sso/redirect?redirectUrl=niochat://sso")!)
+                }
+            }
+            
             Button(action: {
                 self.showingRegisterView.toggle()
             }, label: {
                 Text(verbatim: L10n.Login.openRegistrationPrompt).font(.footnote)
             })
+        }
+        .onOpenURL { url in
+            print(url)
         }
     }
 }
@@ -127,12 +171,14 @@ struct LoginTitleView: View {
 }
 
 struct LoginForm: View {
+    
     @Binding var username: String
     @Binding var password: String
     @Binding var homeserver: String
 
     let guessHomeserverURL: () -> Void
-
+    let queryLoginFlows: () -> Void
+    
     var body: some View {
         VStack {
             FormTextField(title: L10n.Login.Form.username, text: $username, onEditingChanged: { _ in
@@ -142,9 +188,13 @@ struct LoginForm: View {
             FormTextField(title: L10n.Login.Form.password, text: $password, isSecure: true)
 
           #if os(macOS)
-            FormTextField(title: L10n.Login.Form.homeserver, text: $homeserver)
+            FormTextField(title: L10n.Login.Form.homeserver, text: $homeserver, onEditingChanged: { _ in
+                self.queryLoginFlows()
+            })
           #else
-            FormTextField(title: L10n.Login.Form.homeserver, text: $homeserver, keyboardType: .URL)
+            FormTextField(title: L10n.Login.Form.homeserver, text: $homeserver, onEditingChanged: { _ in
+                self.queryLoginFlows()
+            }, keyboardType: .URL)
           #endif
             Text(verbatim: L10n.Login.Form.homeserverOptionalExplanation)
                 .font(.caption)
@@ -196,6 +246,21 @@ private struct FormTextField: View {
     }
 }
 
+struct WebView: UIViewRepresentable {
+
+    var url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        return WKWebView(frame: .zero, configuration: config)
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        let request = URLRequest(url: url)
+        webView.load(request)
+    }
+}
+
 struct LoginView_Previews: PreviewProvider {
     static var previews: some View {
         LoginView(username: .constant(""),
@@ -204,7 +269,8 @@ struct LoginView_Previews: PreviewProvider {
                   showingRegisterView: .constant(false),
                   isLoginEnabled: { return false },
                   onLogin: {},
-                  guessHomeserverURL: {})
+                  guessHomeserverURL: {},
+                  queryLoginFlows: {})
             .accentColor(.purple)
     }
 }

@@ -3,6 +3,9 @@ import NioKit
 
 @main
 struct NioApp: App {
+    
+    @UIApplicationDelegateAdaptor var nioAppDelegate: NioAppDelegate
+    
     @StateObject private var accountStore = AccountStore()
 
     @AppStorage("accentColor") private var accentColor: Color = .purple
@@ -19,6 +22,7 @@ struct NioApp: App {
             RootView()
                 .environmentObject(accountStore)
                 .accentColor(accentColor)
+                
           #endif
         }
       

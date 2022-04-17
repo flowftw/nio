@@ -112,6 +112,41 @@ public class AccountStore: ObservableObject {
             }
         }
     }
+    
+    @Published public var loginFlows: [String] = []
+    
+    public func sso(homeserver: URL) {
+        self.loginFlows.removeAll()
+        self.client = MXRestClient(homeServer: homeserver, unrecognizedCertificateHandler: nil)
+        print("about to get login types")
+        self.client?.getLoginSession() { response in
+            switch response {
+            case .success(let response):
+                for flow in response.flows {
+                    if flow is MXLoginSSOFlow {
+                        let loginFlow = flow as! MXLoginSSOFlow
+                        for identityProvider in loginFlow.identityProviders {
+                            print("######## Found SSO Provider: \(identityProvider.name)")
+                            self.loginFlows.append(identityProvider.name)
+                        }
+                    }
+                }
+            case .failure(let error):
+                print("failed to retrieve login flows")
+                print(error)
+            default:
+                // TODO: handle default
+                print("i dont know")
+                print(response)
+            }
+        }
+    }
+    
+    public func loginSso() {
+        
+        // <homeserver>/_matrix/client/r0/login/sso/redirect?redirectUrl=<your app url>.
+
+    }
 
     private func sync(completion: @escaping (Result<LoginState, Error>) -> Void) {
         guard let credentials = self.credentials else { return }
